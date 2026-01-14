@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Webpage Monitor</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      width: 400px;
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      font-size: 13px;
+      color: #333;
+      background: #fff;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #2196F3, #1976D2);
+      color: #fff;
+      padding: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .header h1 {
+      font-size: 16px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+    }
+    
+    .header h1 .icon {
+      margin-right: 8px;
+      font-size: 20px;
+    }
+    
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .header-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .header-btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+      background: #fafafa;
+    }
+    
+    .tab {
+      flex: 1;
+      padding: 12px;
+      text-align: center;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: #666;
+    }
+    
+    .tab:hover {
+      background: #f0f0f0;
+    }
+    
+    .tab.active {
+      color: #2196F3;
+      border-bottom-color: #2196F3;
+      background: #fff;
+    }
+    
+    .content {
+      padding: 15px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .select-btn {
+      width: 100%;
+      padding: 12px;
+      background: #4CAF50;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 15px;
+    }
+    
+    .select-btn:hover {
+      background: #43A047;
+    }
+    
+    .select-btn .icon {
+      margin-right: 8px;
+    }
+    
+    .monitor-list {
+      margin-top: 10px;
+    }
+    
+    .monitor-item {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      background: #f9f9f9;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      border-left: 3px solid #4CAF50;
+    }
+    
+    .monitor-item.disabled {
+      border-left-color: #bbb;
+      opacity: 0.7;
+    }
+    
+    .monitor-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .monitor-name {
+      font-weight: 500;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .monitor-url {
+      font-size: 11px;
+      color: #888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    
+    .monitor-status {
+      font-size: 10px;
+      color: #4CAF50;
+      margin-top: 3px;
+    }
+    
+    .monitor-item.disabled .monitor-status {
+      color: #888;
+    }
+    
+    .monitor-actions {
+      display: flex;
+      gap: 5px;
+    }
+    
+    .action-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: #e0e0e0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .action-btn:hover {
+      background: #d0d0d0;
+    }
+    
+    .action-btn.delete:hover {
+      background: #ffcdd2;
+      color: #c62828;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      margin-right: 10px;
+    }
+    
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .3s;
+      border-radius: 22px;
+    }
+    
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    
+    input:checked + .toggle-slider {
+      background-color: #4CAF50;
+    }
+    
+    input:checked + .toggle-slider:before {
+      transform: translateX(18px);
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 30px;
+      color: #888;
+    }
+    
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 15px;
+      opacity: 0.5;
+    }
+    
+    /* Settings panel */
+    .settings-section {
+      margin-bottom: 20px;
+    }
+    
+    .settings-label {
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: #555;
+    }
+    
+    .settings-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    
+    .settings-input:focus {
+      outline: none;
+      border-color: #2196F3;
+    }
+    
+    .interval-slider {
+      width: 100%;
+      margin: 10px 0;
+    }
+    
+    .interval-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #888;
+    }
+    
+    /* Edit form */
+    .edit-form {
+      display: none;
+    }
+    
+    .edit-form.active {
+      display: block;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    .form-group label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 5px;
+      color: #555;
+    }
+    
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #2196F3;
+    }
+    
+    .form-group textarea {
+      resize: vertical;
+      min-height: 60px;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      margin: 5px 0;
+    }
+    
+    .checkbox-group input {
+      width: auto;
+      margin-right: 8px;
+    }
+    
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    
+    .form-actions button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    
+    .btn-primary {
+      background: #2196F3;
+      color: #fff;
+    }
+    
+    .btn-primary:hover {
+      background: #1976D2;
+    }
+    
+    .btn-secondary {
+      background: #e0e0e0;
+      color: #333;
+    }
+    
+    .btn-secondary:hover {
+      background: #d0d0d0;
+    }
+    
+    .selector-preview {
+      background: #f5f5f5;
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 5px;
+      font-size: 11px;
+      color: #666;
+      max-height: 80px;
+      overflow-y: auto;
+    }
+    
+    .selector-item {
+      display: flex;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .selector-item:last-child {
+      border-bottom: none;
+    }
+    
+    .selector-text {
+      flex: 1;
+      font-family: 'Consolas', monospace;
+      font-size: 11px;
+    }
+    
+    .selector-remove {
+      color: #f44336;
+      cursor: pointer;
+      padding: 2px 6px;
+    }
+    
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 1000;
+      display: none;
+    }
+    
+    .toast.show {
+      display: block;
+      animation: fadeIn 0.3s;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><span class="icon">🔍</span> Webpage Monitor</h1>
+    <div class="header-actions">
+      <button class="header-btn update-btn" id="updateBtn" title="Update available!" style="display: none; background: #ff9800;">🔄</button>
+      <button class="header-btn" id="toggleAll" title="Toggle all monitors on/off">⏸️</button>
+      <button class="header-btn" id="refreshAll" title="Refresh all monitors">🔄</button>
+      <button class="header-btn" id="settings" title="Settings">⚙️</button>
+    </div>
+  </div>
+  
+  <div class="tabs">
+    <div class="tab active" data-tab="monitors">Monitors</div>
+    <div class="tab" data-tab="edit">Edit</div>
+    <div class="tab" data-tab="options">Options</div>
+  </div>
+  
+  <div class="content" id="monitors-content">
+    <button class="select-btn" id="selectElements">
+      <span class="icon">☰</span> Select Elements to Monitor
+    </button>
+    
+    <div class="monitor-list" id="monitorList">
+      <div class="empty-state">
+        <div class="icon">📋</div>
+        <div>No monitors yet</div>
+        <div style="font-size: 11px; margin-top: 5px;">Click above to start monitoring a webpage</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="content edit-form" id="edit-content">
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="editName" placeholder="Monitor name">
+    </div>
+    
+    <div class="form-group">
+      <label>URL</label>
+      <input type="text" id="editUrl" placeholder="https://example.com">
+    </div>
+    
+    <div class="form-group">
+      <label>CSS Selectors</label>
+      <div class="selector-preview" id="selectorPreview">
+        <div style="color: #888; text-align: center;">No selectors defined</div>
+      </div>
+      <button class="select-btn" id="pickSelectors" style="margin-top: 10px; background: #2196F3;">
+        <span class="icon">☰</span> Pick Elements on Page
+      </button>
+    </div>
+    
+    <div class="form-group">
+      <label>Check Interval</label>
+      <input type="range" class="interval-slider" id="editInterval" min="5" max="86400" value="30">
+      <div class="interval-labels">
+        <span>5s</span>
+        <span>30s</span>
+        <span>5m</span>
+        <span>1h</span>
+        <span>1d</span>
+      </div>
+      <div style="text-align: center; margin-top: 5px; color: #666;" id="intervalValue">30 seconds</div>
+    </div>
+    
+    <div class="form-group">
+      <label>Discord Webhook URL</label>
+      <input type="text" id="editWebhook" placeholder="https://discord.com/api/webhooks/...">
+    </div>
+    
+    <div class="form-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="editAudio" checked>
+        <label for="editAudio">Audio notification</label>
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="editPopup" checked>
+        <label for="editPopup">Browser notification</label>
+      </div>
+    </div>
+    
+    <div class="form-actions">
+      <button class="btn-secondary" id="cancelEdit">Cancel</button>
+      <button class="btn-primary" id="saveEdit">Save Monitor</button>
+    </div>
+  </div>
+  
+  <div class="content edit-form" id="options-content">
+    <div class="settings-section">
+      <div class="settings-label">Default Discord Webhook</div>
+      <input type="text" class="settings-input" id="defaultWebhook" placeholder="https://discord.com/api/webhooks/...">
+    </div>
+    
+    <div class="settings-section">
+      <div class="settings-label">Default Check Interval</div>
+      <input type="range" class="interval-slider" id="defaultInterval" min="5" max="3600" value="30">
+      <div class="interval-labels">
+        <span>5s</span>
+        <span>30s</span>
+        <span>5m</span>
+        <span>1h</span>
+      </div>
+    </div>
+    
+    <div class="settings-section">
+      <div class="checkbox-group">
+        <input type="checkbox" id="defaultAudio" checked>
+        <label for="defaultAudio">Enable audio notifications by default</label>
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="defaultPopup" checked>
+        <label for="defaultPopup">Enable browser notifications by default</label>
+      </div>
+    </div>
+    
+    <button class="btn-primary" id="saveSettings" style="width: 100%;">Save Settings</button>
+    
+    <div class="settings-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+      <div class="settings-label">Backup & Restore</div>
+      <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <button class="btn-secondary" id="exportMonitors" style="flex: 1;">📤 Export</button>
+        <button class="btn-secondary" id="importMonitors" style="flex: 1;">📥 Import</button>
+      </div>
+      <input type="file" id="importFile" accept=".json" style="display: none;">
+      <div style="font-size: 11px; color: #888; margin-top: 8px;">Export your monitors to a file, or import from a backup</div>
+    </div>
+  </div>
+  
+  <div class="toast" id="toast">Settings saved!</div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
