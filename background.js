@@ -622,7 +622,7 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
 // ============================================
 
 // GitHub raw URL for version.json
-const UPDATE_CHECK_URL = 'https://raw.githubusercontent.com/Michaelcain7/webpage-monitor-extension/main/version.json';
+const UPDATE_CHECK_URL = 'https://raw.githubusercontent.com/michaelacain7/webpage-monitor-extension/main/version.json';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
 
 // Get current version from manifest
