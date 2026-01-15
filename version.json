@@ -1,5 +1,5 @@
 {
-  "version": "1.2.1",
-  "changelog": "Fixed GitHub username for auto-updates",
+  "version": "1.2.2",
+  "changelog": "Added status indicators (Checking/Idle/Error) for each monitor",
   "downloadUrl": "https://github.com/michaelacain7/webpage-monitor-extension/releases/latest"
 }

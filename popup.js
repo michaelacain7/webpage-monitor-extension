@@ -79,8 +79,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load and display monitors
   function loadMonitors() {
-    chrome.storage.local.get(['monitors'], (result) => {
+    chrome.storage.local.get(['monitors', 'monitorStatus'], (result) => {
       const monitors = result.monitors || {};
+      const status = result.monitorStatus || {};
       const listContainer = document.getElementById('monitorList');
       
       if (Object.keys(monitors).length === 0) {
@@ -97,6 +98,10 @@ document.addEventListener('DOMContentLoaded', () => {
       listContainer.innerHTML = '';
       
       Object.entries(monitors).forEach(([id, monitor]) => {
+        const monitorStatus = status[id] || { state: 'idle' };
+        const statusText = getStatusText(monitorStatus, monitor);
+        const statusClass = getStatusClass(monitorStatus.state);
+        
         const item = document.createElement('div');
         item.className = `monitor-item ${monitor.enabled ? '' : 'disabled'}`;
         item.innerHTML = `
@@ -107,7 +112,10 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="monitor-info">
             <div class="monitor-name">${escapeHtml(monitor.name)}</div>
             <div class="monitor-url">${escapeHtml(monitor.url)}</div>
-            <div class="monitor-status">${monitor.enabled ? `Every ${formatInterval(monitor.interval)}` : 'Disabled'}</div>
+            <div class="monitor-meta">
+              <span class="monitor-interval">${monitor.enabled ? `Every ${formatInterval(monitor.interval)}` : 'Disabled'}</span>
+              <span class="monitor-status ${statusClass}">${statusText}</span>
+            </div>
           </div>
           <div class="monitor-actions">
             <button class="action-btn" data-action="check" data-id="${id}" title="Check now">🔄</button>
@@ -140,6 +148,53 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
     });
+  }
+
+  // Get status text based on state
+  function getStatusText(status, monitor) {
+    if (!monitor.enabled) return 'Disabled';
+    
+    switch (status.state) {
+      case 'checking':
+        return '⟳ Checking...';
+      case 'error':
+        return `⚠ Error: ${status.error || 'Failed'}`;
+      case 'success':
+        // Show last check time
+        if (monitor.lastCheck) {
+          const lastCheck = new Date(monitor.lastCheck);
+          const now = new Date();
+          const diffMs = now - lastCheck;
+          const diffSec = Math.floor(diffMs / 1000);
+          if (diffSec < 60) return `✓ ${diffSec}s ago`;
+          const diffMin = Math.floor(diffSec / 60);
+          if (diffMin < 60) return `✓ ${diffMin}m ago`;
+          return `✓ ${lastCheck.toLocaleTimeString()}`;
+        }
+        return '✓ Idle';
+      default:
+        if (monitor.lastCheck) {
+          const lastCheck = new Date(monitor.lastCheck);
+          const now = new Date();
+          const diffMs = now - lastCheck;
+          const diffSec = Math.floor(diffMs / 1000);
+          if (diffSec < 60) return `Idle · ${diffSec}s ago`;
+          const diffMin = Math.floor(diffSec / 60);
+          if (diffMin < 60) return `Idle · ${diffMin}m ago`;
+          return `Idle · ${lastCheck.toLocaleTimeString()}`;
+        }
+        return 'Idle';
+    }
+  }
+
+  // Get CSS class for status
+  function getStatusClass(state) {
+    switch (state) {
+      case 'checking': return 'status-checking';
+      case 'error': return 'status-error';
+      case 'success': return 'status-success';
+      default: return 'status-idle';
+    }
   }
 
   // Toggle monitor enabled state
@@ -553,6 +608,9 @@ document.addEventListener('DOMContentLoaded', () => {
   checkPendingMonitor();
   checkToggleState();
   checkForUpdate();
+  
+  // Auto-refresh monitors every 2 seconds to show status changes
+  setInterval(loadMonitors, 2000);
   
   // Check for available update
   function checkForUpdate() {

@@ -111,6 +111,14 @@ function addJitter(baseMs) {
   return baseMs + (Math.random() * jitter * 2) - jitter;
 }
 
+// Update monitor status in storage
+async function updateMonitorStatus(id, state, error = null) {
+  const result = await chrome.storage.local.get(['monitorStatus']);
+  const status = result.monitorStatus || {};
+  status[id] = { state, error, timestamp: Date.now() };
+  await chrome.storage.local.set({ monitorStatus: status });
+}
+
 // Check a specific monitor by injecting content script
 async function checkMonitor(id) {
   // Prevent concurrent checks for the same monitor
@@ -119,6 +127,9 @@ async function checkMonitor(id) {
   }
   checkLocks.set(id, true);
   
+  // Set status to checking
+  await updateMonitorStatus(id, 'checking');
+  
   try {
     const result = await chrome.storage.local.get(['monitors']);
     const monitors = result.monitors || {};
@@ -126,6 +137,7 @@ async function checkMonitor(id) {
     
     if (!monitor || !monitor.enabled) {
       checkLocks.set(id, false);
+      await updateMonitorStatus(id, 'idle');
       return;
     }
     
@@ -137,6 +149,7 @@ async function checkMonitor(id) {
   
     // Use fetch to get the page content - fast, single attempt
     let html = '';
+    let fetchError = null;
     
     try {
       const controller = new AbortController();
@@ -159,13 +172,16 @@ async function checkMonitor(id) {
       
       if (response.ok) {
         html = await response.text();
+      } else {
+        fetchError = `HTTP ${response.status}`;
       }
     } catch (e) {
-      // Silent fail - will retry on next scheduled check
+      fetchError = e.name === 'AbortError' ? 'Timeout' : 'Network error';
     }
     
     if (!html) {
       checkLocks.set(id, false);
+      await updateMonitorStatus(id, 'error', fetchError || 'Failed to fetch');
       return;
     }
     
@@ -246,14 +262,20 @@ async function checkMonitor(id) {
       if (monitor.webhookUrl) {
         await sendWebhook(monitor, newItemsText, content);
       }
+      
+      // Update status to success
+      await updateMonitorStatus(id, 'success');
     } else {
       monitor.lastContent = content;
       monitors[id] = monitor;
       await chrome.storage.local.set({ monitors });
+      
+      // Update status to success
+      await updateMonitorStatus(id, 'success');
     }
     
   } catch (error) {
-    // Silent error handling
+    await updateMonitorStatus(id, 'error', error.message || 'Unknown error');
   } finally {
     checkLocks.set(id, false);
   }
