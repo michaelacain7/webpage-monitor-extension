@@ -1,5 +1,5 @@
 {
-  "version": "1.2.2",
-  "changelog": "Added status indicators (Checking/Idle/Error) for each monitor",
+  "version": "1.2.7",
+  "changelog": "Optimized for 40+ monitors - in-memory caching, non-blocking storage, batched status updates",
   "downloadUrl": "https://github.com/michaelacain7/webpage-monitor-extension/releases/latest"
 }

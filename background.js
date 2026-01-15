@@ -59,8 +59,8 @@ function scheduleQuickCheck(id, intervalSeconds) {
     clearTimeout(quickCheckTimers.get(id));
   }
   
-  // Add jitter to interval (±20%) to avoid looking like a bot
-  const intervalMs = addJitter(intervalSeconds * 1000);
+  // Use exact interval
+  const intervalMs = intervalSeconds * 1000;
   
   const timer = setTimeout(async () => {
     const result = await chrome.storage.local.get(['monitors']);
@@ -68,7 +68,9 @@ function scheduleQuickCheck(id, intervalSeconds) {
     const monitor = monitors[id];
     
     if (monitor && monitor.enabled) {
-      await checkMonitor(id);
+      // Fire check without waiting - don't block the timer
+      checkMonitor(id).catch(() => {});
+      // Schedule next check immediately - don't wait for current check to finish
       scheduleQuickCheck(id, intervalSeconds);
     }
   }, intervalMs);
@@ -111,12 +113,49 @@ function addJitter(baseMs) {
   return baseMs + (Math.random() * jitter * 2) - jitter;
 }
 
-// Update monitor status in storage
-async function updateMonitorStatus(id, state, error = null) {
-  const result = await chrome.storage.local.get(['monitorStatus']);
-  const status = result.monitorStatus || {};
-  status[id] = { state, error, timestamp: Date.now() };
-  await chrome.storage.local.set({ monitorStatus: status });
+// In-memory cache for monitors (avoid reading storage on every check)
+let monitorsCache = null;
+let monitorsCacheTime = 0;
+const MONITORS_CACHE_TTL = 10000; // Refresh cache every 10 seconds
+
+// In-memory status cache (batch updates to storage)
+const statusCache = new Map();
+let statusUpdatePending = false;
+
+// Get monitors from cache or storage
+async function getMonitors() {
+  const now = Date.now();
+  if (monitorsCache && (now - monitorsCacheTime) < MONITORS_CACHE_TTL) {
+    return monitorsCache;
+  }
+  const result = await chrome.storage.local.get(['monitors']);
+  monitorsCache = result.monitors || {};
+  monitorsCacheTime = now;
+  return monitorsCache;
+}
+
+// Invalidate monitors cache (called when monitors are updated)
+function invalidateMonitorsCache() {
+  monitorsCache = null;
+  monitorsCacheTime = 0;
+}
+
+// Update monitor status in memory (batched to storage)
+function updateMonitorStatus(id, state, error = null) {
+  statusCache.set(id, { state, error, timestamp: Date.now() });
+  
+  // Batch status updates to storage (debounced)
+  if (!statusUpdatePending) {
+    statusUpdatePending = true;
+    setTimeout(async () => {
+      const statusObj = {};
+      for (const [key, value] of statusCache) {
+        statusObj[key] = value;
+      }
+      await chrome.storage.local.set({ monitorStatus: statusObj });
+      statusUpdatePending = false;
+    }, 500); // Update storage every 500ms max
+  }
 }
 
 // Check a specific monitor by injecting content script
@@ -127,17 +166,16 @@ async function checkMonitor(id) {
   }
   checkLocks.set(id, true);
   
-  // Set status to checking
-  await updateMonitorStatus(id, 'checking');
+  // Set status to checking (in-memory, batched to storage)
+  updateMonitorStatus(id, 'checking');
   
   try {
-    const result = await chrome.storage.local.get(['monitors']);
-    const monitors = result.monitors || {};
+    const monitors = await getMonitors();
     const monitor = monitors[id];
     
     if (!monitor || !monitor.enabled) {
       checkLocks.set(id, false);
-      await updateMonitorStatus(id, 'idle');
+      updateMonitorStatus(id, 'idle');
       return;
     }
     
@@ -153,7 +191,7 @@ async function checkMonitor(id) {
     
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
       
       const response = await fetch(monitor.url, {
         headers: {
@@ -181,7 +219,7 @@ async function checkMonitor(id) {
     
     if (!html) {
       checkLocks.set(id, false);
-      await updateMonitorStatus(id, 'error', fetchError || 'Failed to fetch');
+      updateMonitorStatus(id, 'error', fetchError || 'Failed to fetch');
       return;
     }
     
@@ -230,8 +268,10 @@ async function checkMonitor(id) {
       if (trulyNewItems.length === 0) {
         monitor.lastContent = content;
         monitors[id] = monitor;
-        await chrome.storage.local.set({ monitors });
+        monitorsCache = monitors; // Update cache
+        chrome.storage.local.set({ monitors }); // Don't await
         checkLocks.set(id, false);
+        updateMonitorStatus(id, 'success');
         return;
       }
       
@@ -247,9 +287,10 @@ async function checkMonitor(id) {
       monitor.lastChange = new Date().toISOString();
       monitor.lastContent = content;
       
-      // Save to storage BEFORE sending notifications
+      // Save to storage (don't block)
       monitors[id] = monitor;
-      await chrome.storage.local.set({ monitors });
+      monitorsCache = monitors; // Update cache
+      chrome.storage.local.set({ monitors }); // Don't await
       
       const newItemsText = trulyNewItems.join('\n');
       console.log('📢 Change detected:', monitor.name, '-', newItemsText.substring(0, 100));
@@ -260,22 +301,23 @@ async function checkMonitor(id) {
       }
       
       if (monitor.webhookUrl) {
-        await sendWebhook(monitor, newItemsText, content);
+        sendWebhook(monitor, newItemsText, content); // Don't await
       }
       
       // Update status to success
-      await updateMonitorStatus(id, 'success');
+      updateMonitorStatus(id, 'success');
     } else {
       monitor.lastContent = content;
       monitors[id] = monitor;
-      await chrome.storage.local.set({ monitors });
+      monitorsCache = monitors; // Update cache
+      chrome.storage.local.set({ monitors }); // Don't await
       
       // Update status to success
-      await updateMonitorStatus(id, 'success');
+      updateMonitorStatus(id, 'success');
     }
     
   } catch (error) {
-    await updateMonitorStatus(id, 'error', error.message || 'Unknown error');
+    updateMonitorStatus(id, 'error', error.message || 'Unknown error');
   } finally {
     checkLocks.set(id, false);
   }
@@ -517,6 +559,10 @@ async function playNotificationSound() {
 const webhookLastSent = new Map(); // URL -> timestamp
 const WEBHOOK_MIN_INTERVAL = 500; // Minimum 0.5 second between webhooks
 
+// Webhook deduplication - prevent same message being sent twice
+const recentWebhookMessages = new Map(); // hash -> timestamp
+const WEBHOOK_DEDUP_WINDOW = 10000; // 10 second window
+
 // Send Discord webhook - fast and clean
 async function sendWebhook(monitor, newItems, fullContent) {
   // Quick rate limit check
@@ -542,6 +588,22 @@ async function sendWebhook(monitor, newItems, fullContent) {
     // Skip if empty
     if (!changeText || changeText.length < 5) {
       return;
+    }
+    
+    // Deduplication check - don't send same message twice within 10 seconds
+    const messageHash = hashContent(monitor.name + changeText);
+    const lastSentTime = recentWebhookMessages.get(messageHash) || 0;
+    if (now - lastSentTime < WEBHOOK_DEDUP_WINDOW) {
+      console.log('Webhook dedup: skipping duplicate message');
+      return;
+    }
+    recentWebhookMessages.set(messageHash, now);
+    
+    // Clean up old entries
+    for (const [hash, time] of recentWebhookMessages) {
+      if (now - time > WEBHOOK_DEDUP_WINDOW) {
+        recentWebhookMessages.delete(hash);
+      }
     }
     
     // Limit length
@@ -587,6 +649,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     
   } else if (message.action === 'updateMonitors') {
+    invalidateMonitorsCache();
     initializeMonitors();
     sendResponse({ success: true });
     
@@ -645,7 +708,7 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
 
 // GitHub raw URL for version.json
 const UPDATE_CHECK_URL = 'https://raw.githubusercontent.com/michaelacain7/webpage-monitor-extension/main/version.json';
-const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
+const UPDATE_CHECK_INTERVAL = 1 * 60 * 1000; // Check every 1 minute
 
 // Get current version from manifest
 function getCurrentVersion() {
@@ -691,12 +754,12 @@ async function checkForUpdates() {
         }
       });
       
-      // Show notification
+      // Show notification with instructions
       chrome.notifications.create('update_available', {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
-        title: 'Webpage Monitor Update Available',
-        message: `Version ${data.version} is available. Click to update.`,
+        title: `Update Available: v${data.version}`,
+        message: `Click to download. Then: 1) Unzip 2) Replace files in extension folder 3) Click refresh in chrome://extensions`,
         priority: 2,
         requireInteraction: true
       });
